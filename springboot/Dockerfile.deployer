@@ -1,0 +1,22 @@
+# Dockerfile for deploying Solidity contracts to Ganache
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install dependencies
+RUN npm install -g truffle@5.11.5
+
+# Copy contract files
+COPY CrossBorderPayment.sol ./contracts/
+COPY truffle-config.js .
+COPY migrations/ ./migrations/
+
+# Install project dependencies
+RUN npm init -y && \
+    npm install --save-dev @truffle/hdwallet-provider web3
+
+# Wait for Ganache and deploy
+COPY deploy.sh .
+RUN chmod +x deploy.sh
+
+CMD ["./deploy.sh"]

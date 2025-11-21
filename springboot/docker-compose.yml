@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # Frontend - Nginx serving static HTML
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: crosspay-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - crosspay-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Backend - Spring Boot API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: crosspay-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - JAVA_OPTS=-Xms256m -Xmx512m
+    depends_on:
+      ganache:
+        condition: service_healthy
+    networks:
+      - crosspay-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    volumes:
+      - backend-logs:/app/logs
+
+  # Ganache - Local Ethereum blockchain for Solidity contracts
+  ganache:
+    image: trufflesuite/ganache:latest
+    container_name: crosspay-ganache
+    ports:
+      - "8545:8545"
+    command: >
+      ganache
+      --wallet.defaultBalance 10000
+      --wallet.totalAccounts 10
+      --chain.chainId 1337
+      --chain.networkId 1337
+      --miner.blockTime 3
+      --logging.verbose
+      --server.host 0.0.0.0
+      --server.port 8545
+    networks:
+      - crosspay-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8545/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - ganache-data:/ganache-data
+
+  # Contract Deployer - Deploys Solidity contract to Ganache
+  contract-deployer:
+    build:
+      context: .
+      dockerfile: Dockerfile.deployer
+    container_name: crosspay-deployer
+    depends_on:
+      ganache:
+        condition: service_healthy
+    environment:
+      - GANACHE_URL=http://ganache:8545
+    networks:
+      - crosspay-network
+    volumes:
+      - contract-artifacts:/contracts
+
+networks:
+  crosspay-network:
+    driver: bridge
+    name: crosspay-network
+
+volumes:
+  backend-logs:
+    name: crosspay-backend-logs
+  ganache-data:
+    name: crosspay-ganache-data
+  contract-artifacts:
+    name: crosspay-contract-artifacts
